@@ -100,6 +100,7 @@ extension Snapshotting where Value: SwiftUI.View, Format == NSImage {
   ///   - appearance: A light/dark mode override.
   public static func image(
     precision: Float = 1,
+    perceptualPrecision: Float = 1,
     layout: SwiftUISnapshotLayout = .sizeThatFits,
     appearance: NSAppearance? = NSAppearance(named: .aqua)
   ) -> Snapshotting {
@@ -111,7 +112,7 @@ extension Snapshotting where Value: SwiftUI.View, Format == NSImage {
     case let .fixed(width: width, height: height):
       size = .init(width: width, height: height)
     }
-    return SimplySnapshotting.image(precision: precision).asyncPullback { swiftUIView in
+    return SimplySnapshotting.image(precision: precision, perceptualPrecision: perceptualPrecision).asyncPullback { swiftUIView in
         let controller = NSHostingController(rootView: swiftUIView)
         let view = controller.view
         view.appearance = appearance
