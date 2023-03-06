@@ -102,7 +102,8 @@ extension Snapshotting where Value: SwiftUI.View, Format == NSImage {
     precision: Float = 1,
     perceptualPrecision: Float = 1,
     layout: SwiftUISnapshotLayout = .sizeThatFits,
-    appearance: NSAppearance? = NSAppearance(named: .aqua)
+    appearance: NSAppearance? = NSAppearance(named: .aqua),
+    windowForDrawing: GenericWindow? = nil
   ) -> Snapshotting {
     let size: CGSize?
 
@@ -112,29 +113,54 @@ extension Snapshotting where Value: SwiftUI.View, Format == NSImage {
     case let .fixed(width: width, height: height):
       size = .init(width: width, height: height)
     }
-    return SimplySnapshotting.image(precision: precision, perceptualPrecision: perceptualPrecision).asyncPullback { swiftUIView in
-        let controller = NSHostingController(rootView: swiftUIView)
-        let view = controller.view
-        view.appearance = appearance
-
-        let initialSize = view.frame.size
-        view.frame.size = size ?? controller.sizeThatFits(in: .zero)
-        guard view.frame.width > 0, view.frame.height > 0 else {
-          fatalError("View not renderable to image at size \(view.frame.size)")
-        }
-
-        return view.snapshot ?? Async { callback in
-        addImagesForRenderedViews(view).sequence().run { views in
-          let bitmapRep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
-          view.cacheDisplay(in: view.bounds, to: bitmapRep)
-          let image = NSImage(size: view.bounds.size)
-          image.addRepresentation(bitmapRep)
-          callback(image)
-          views.forEach { $0.removeFromSuperview() }
-          view.frame.size = initialSize
-        }
+      return SimplySnapshotting.image(precision: precision, perceptualPrecision: perceptualPrecision).asyncPullback { swiftUIView in
+          let controller = NSHostingController(rootView: swiftUIView)
+          let view = controller.view
+          let initialAppearance = view.appearance
+          if let appearance = appearance {
+              view.appearance = appearance
+          }
+          
+          if let windowForDrawing = windowForDrawing {
+              precondition(
+                view.window == nil,
+              """
+              If choosing to draw the view using a new window, the view must not already be attached to an existing window. \
+              (We wouldn’t be able to easily restore the view and all its associated constraints to the original window \
+              after moving it to the new window.)
+              """
+              )
+              windowForDrawing.contentView = NSView()
+              windowForDrawing.contentView?.addSubview(view)
+          }
+          
+          let initialSize = view.frame.size
+          view.frame.size = size ?? controller.sizeThatFits(in: .zero)
+          guard view.frame.width > 0, view.frame.height > 0 else {
+              fatalError("View not renderable to image at size \(view.frame.size)")
+          }
+          
+          return view.snapshot ?? Async { callback in
+              addImagesForRenderedViews(view).sequence().run { views in
+                  let bitmapRep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+                  view.cacheDisplay(in: view.bounds, to: bitmapRep)
+                  let image = NSImage(size: view.bounds.size)
+                  image.addRepresentation(bitmapRep)
+                  callback(image)
+                  views.forEach { $0.removeFromSuperview() }
+                  view.frame.size = initialSize
+                  view.appearance = initialAppearance
+                  
+                  if windowForDrawing != nil {
+                      view.removeFromSuperview()
+                      view.layer = nil
+                      view.subviews.forEach { subview in
+                          subview.layer = nil
+                      }
+                  }
+              }
+          }
       }
-    }
   }
 }
 #endif
